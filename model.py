@@ -5,7 +5,6 @@ import torch.nn.functional as F
 
 from torch_geometric.utils import to_dense_adj, dense_to_sparse
 from torch_geometric.nn import GCNConv, BatchNorm
-from torch_geometric.data import DataLoader
 
 class GraphOperators(torch.nn.Module):
     def __init__(self, power = 2, num_edge_attr = 33, hidden_nodes = 16):

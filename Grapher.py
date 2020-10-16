@@ -282,7 +282,7 @@ class GraphOCR:
             if mode == 'hori':
                 numerator = (b[:,1] - a[:,1])
                 denominator = (b[:,0] - a[:,0])
-            elif mode == 'verti':
+            else:
                 numerator = (b[:,0] - a[:,0])
                 denominator = (b[:,1] - a[:,1])
             return np.arctan2(numerator, denominator)

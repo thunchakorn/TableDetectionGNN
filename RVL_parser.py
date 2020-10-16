@@ -1,6 +1,15 @@
 import torch
-from torch_geometric.data import InMemoryDataset
+from torch_geometric.data import Data, InMemoryDataset, Dataset
+import xml.etree.ElementTree as ET
 import shutil
+import os
+import os.path as osp
+import glob
+from Grapher import GraphOCR
+
+import time
+import cv2
+import numpy as np
 
 class RVL_Dataset(InMemoryDataset):
     def __init__(self, root, dir, transform=None, pre_transform=None): 
@@ -19,8 +28,10 @@ class RVL_Dataset(InMemoryDataset):
 
     @property
     def processed_file_names(self):
-        return ['RVL_Dataset.pt']
-        # return []
+        if osp.exists(osp.join(self.root, 'processed', 'RVL_Dataset.pt')):
+            return ['RVL_Dataset.pt']
+        else:
+             return []
     
     def download(self):
         pass

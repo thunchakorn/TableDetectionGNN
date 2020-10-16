@@ -1,4 +1,5 @@
 import torch
+import torch.functional as F
 
 class WeightedFocalLoss(torch.nn.Module):
     "Non weighted version of Focal Loss"
