@@ -279,6 +279,7 @@ class GraphOCR:
             param mode: 2 mode to choose {'hori', 'verti'}
             return: angle in radian with shape (n, )
             """
+            
             if mode == 'hori':
                 numerator = (b[:,1] - a[:,1])
                 denominator = (b[:,0] - a[:,0])

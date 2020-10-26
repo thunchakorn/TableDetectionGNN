@@ -6,6 +6,7 @@ import os
 import os.path as osp
 import glob
 from Grapher import GraphOCR
+import pandas as pd
 
 import time
 import cv2
@@ -64,8 +65,7 @@ class RVL_Dataset(InMemoryDataset):
                 label = self.find_label(gt_dict, (xmin, ymin, xmax, ymax))
                 row.append((xmin,ymin,xmax,ymax,text,label))
             df = pd.DataFrame(row, columns=['xmin', 'ymin', 'xmax', 'ymax', 'text', 'label'])
-            df['xcen'] = (df['xmin'] + df['xmax']) / 2
-            df['ycen'] = (df['ymin'] + df['ymax']) / 2            
+       
             if df.shape[0] == 0:
                 continue
             x, y, edge_index, edge_attr, edge_label = self.grapher.connect(df, h, w, gt_dict)

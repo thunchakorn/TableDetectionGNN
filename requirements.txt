@@ -7,3 +7,8 @@ torch-spline-conv==latest+${CUDA}
 torch-geometric
 transformers
 
+pythainlp
+tensorflow_hub
+kora
+Shapely
+
