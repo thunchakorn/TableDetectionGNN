@@ -1,6 +1,13 @@
 # Dataset
 RVL-Dataset
 findoc-dataset
+findoc-dataset_google_drive
+
+# test file
+test.py
+test.ipynb
+findoc-dataset.zip
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

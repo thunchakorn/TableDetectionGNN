@@ -12,12 +12,12 @@ import numpy as np
 import pandas as pd
 from shapely.geometry.polygon import Polygon
 from shapely.geometry import Point
-from grapher_coco import GraphOCR
+from grapher2 import GraphOCR
 
 class GraphCOCODataset(InMemoryDataset):
     '''
     dataset-root
-    |____ annotations
+    |____ annotations_folder
     |        |___dataset1.json
     |        |___dataset2.json
     |____ images
@@ -28,15 +28,23 @@ class GraphCOCODataset(InMemoryDataset):
     |       |___dataset2/
 
     '''
-    def __init__(self, root, transform=None, pre_transform=None):
+    def __init__(self, root, ann_file_rpath, transform=None, pre_transform=None):
+        """
+        ann_dir: annotation file relative path from root e.g. root = './abc' ann_file_path='./annotation/ann.json'
+        """
         self.root = root
-        self.TARGET = ['DocType', 'Item', 'Payment', 'Reciever', 'Remark', 'Sender', 'Signature', 'Summary', 'Table', 'Other']
-        self.grapher = GraphOCR(label = self.TARGET)
+        self.ann_file_rpath = ann_file_rpath
+        self.ann_path = osp.join(root, ann_file_rpath)
+        self.dataset_name = osp.splitext(osp.split(self.ann_file_rpath)[-1])[0]
+        print(self.root, self.ann_file_rpath, self.ann_path, self.dataset_name)
+
+        self.TARGET = ['docType', 'item', 'payment', 'reciever', 'remark', 'sender', 'signature', 'summary', 'table', 'other']
+        self.grapher = GraphOCR(label = self.TARGET, edge_limit=(2,2))
         self.plot_dir = osp.join(self.root, 'plot_graph/')
         if not osp.isdir(osp.join(self.root, 'processed')):
             os.mkdir(osp.join(self.root, 'processed'))
         super(GraphCOCODataset, self).__init__(root, transform, pre_transform)
-        self.data, self.slices = torch.load(osp.join(self.root, 'processed', 'dataset.pt'))
+        self.data, self.slices = torch.load(osp.join(self.root, 'processed', self.dataset_name + '.pt'))
 
     @property
     def raw_file_names(self):
@@ -44,10 +52,10 @@ class GraphCOCODataset(InMemoryDataset):
 
     @property
     def processed_file_names(self):
-        if osp.exists(osp.join(self.root, 'processed', 'dataset.pt')):
-            return ['dataset.pt']
-        else:
-             return []
+        # if osp.exists(osp.join(self.root, 'processed', self.dataset_name + '.pt')):
+        #     return [self.dataset_name + '.pt']
+        # else:
+            return []
     
     def download(self):
         pass       
@@ -56,66 +64,58 @@ class GraphCOCODataset(InMemoryDataset):
         if not osp.isdir(osp.join(self.root, 'plot_graph/')):
             os.mkdir(osp.join(self.root, 'plot_graph/'))
 
+        with open(self.ann_path, 'r') as f:
+            ann = json.load(f)
 
-        dataset_list = os.listdir(osp.join(self.root, 'images'))
-        print(dataset_list)
+        all_img_id = [image_file['id'] for image_file in ann['images']]
+        ann_id_img = self.get_ann_id(ann['annotations'], all_img_id)
         data_list = []
-        for dataset_name in dataset_list:
-            if dataset_name[0] == '.':  #ignore hidden file
+        ## image level
+        for id, img_info in enumerate(ann['images']):
+            start = time.time()
+            h = img_info['height']
+            w = img_info['width']
+            img_id = img_info['id']
+            print(osp.join(img_info['file_name']))
+            img = cv2.imread(img_info['file_name'])
+            gt_dict = self.get_gt_dict(img_id, np.array(ann['annotations']), ann_id_img)
+
+            ## ocr level
+            ocr_path = img_info['file_name'].replace('images', 'OCR').replace('.jpg', '.json')
+
+            with open(ocr_path, 'r') as f:
+                ocr = json.load(f)
+
+            row = []
+            for ocr_result in ocr['result']:
+                text, bbox = self.get_text(ocr_result)
+                label = self.get_label(bbox, gt_dict)
+                row.append((bbox[0], bbox[1], bbox[2], bbox[3], text, label))
+            df = pd.DataFrame(row, columns=['xmin', 'ymin', 'xmax', 'ymax', 'text', 'label'])
+            self.visualise_node(img, df)
+            print('connecting graph')
+            x, text_feature, y, edge_index, edge_attr, edge_label = self.grapher.connect(df, h, w, gt_dict)
+
+            save_plot_name = osp.join(self.plot_dir, osp.split(img_info['file_name'])[-1])
+            self.visualise_graph(img, df, edge_index, edge_attr, edge_label, save_plot_name)
+
+            data = Data(x=torch.tensor(x, dtype=torch.float),
+                    text_feature = torch.tensor(text_feature, dtype = torch.float),
+                    y=torch.tensor(y, dtype=torch.long),
+                    edge_index=torch.tensor(edge_index, dtype=torch.long).t().contiguous(),
+                    edge_label = torch.tensor(edge_label, dtype=torch.long),
+                    edge_attr = torch.tensor(edge_attr, dtype=torch.float),
+                    image_path = img_info['file_name'])
+            print(data)
+            print(f'time use {time.time() - start} seconds')
+
+            if self.pre_filter is not None and not self.pre_filter(data):
                 continue
-            print(f'++++++++++++++++={dataset_name}+++++++++++++++')
-            ann_path = osp.join(self.root, 'annotations', dataset_name + '.json')
 
-            with open(ann_path, 'r') as f:
-                ann = json.load(f)
+            if self.pre_transform is not None:
+                data = self.pre_transform(data)
 
-            num_img = len(ann['images'])
-            ann_id_img = self.get_ann_id(ann['annotations'], num_img)
-
-            ## image level
-            for id, img_info in enumerate(ann['images']):
-                start = time.time()
-                h = img_info['height']
-                w = img_info['width']
-                img_id = img_info['id']
-                print(osp.join(self.root, 'images', img_info['file_name']))
-                img = cv2.imread(osp.join(self.root, 'images', img_info['file_name']))
-                gt_dict = self.get_gt_dict(img_id, np.array(ann['annotations']), ann_id_img)
-
-                ## ocr level
-                ocr_path = osp.join(self.root, 'OCR', dataset_name, osp.basename(img_info['file_name'].split('.')[0] + '.json')) 
-
-                with open(ocr_path, 'r') as f:
-                    ocr = json.load(f)
-
-                row = []
-                for ocr_result in ocr['result']:
-                    text, bbox = self.get_text(ocr_result)
-                    label = self.get_label(bbox, gt_dict)
-                    row.append((bbox[0], bbox[1], bbox[2], bbox[3], text, label))
-                df = pd.DataFrame(row, columns=['xmin', 'ymin', 'xmax', 'ymax', 'text', 'label'])
-                self.visualise_node(img, df)
-                print('connecting graph')
-                x, y, edge_index, edge_attr, edge_label = self.grapher.connect(df, h, w, gt_dict)
-
-                save_plot_name = osp.join(self.plot_dir, osp.split(img_info['file_name'])[-1])
-                self.visualise_graph(img, df, edge_index, edge_attr, edge_label, save_plot_name)
-
-                data = Data(x=torch.tensor(x, dtype=torch.float),
-                        y=torch.tensor(y, dtype=torch.long),
-                        edge_index=torch.tensor(edge_index, dtype=torch.long).t().contiguous(),
-                        edge_label = torch.tensor(edge_label, dtype=torch.long),
-                        edge_attr = torch.tensor(edge_attr, dtype=torch.float))
-                print(f'time use {time.time() - start} seconds')
-
-                if self.pre_filter is not None and not self.pre_filter(data):
-                    continue
-
-                if self.pre_transform is not None:
-                    data = self.pre_transform(data)
-
-                data_list.append(data) 
-                print(data)
+            data_list.append(data) 
 
         if self.pre_filter is not None:
             data_list = [data for data in data_list if self.pre_filter(data)]
@@ -124,7 +124,7 @@ class GraphCOCODataset(InMemoryDataset):
             data_list = [self.pre_transform(data) for data in data_list]
 
         data, slices = self.collate(data_list)
-        torch.save((data, slices), osp.join(self.root, 'processed', 'dataset.pt'))
+        torch.save((data, slices), osp.join(self.root, 'processed', self.dataset_name + '.pt'))
 
     def get_gt_dict(self, img_id, annotations, ann_id_img):
         """
@@ -140,12 +140,12 @@ class GraphCOCODataset(InMemoryDataset):
             gt_dict[region_target] = np.append(gt_dict[region_target], polygon)
         return gt_dict
 
-    def get_ann_id(self, annotations, num_img):
+    def get_ann_id(self, annotations, all_img_id):
         """
         get annotations id of each images as dictionary
         """
         img_id_list = np.array([an['image_id'] for an in annotations])
-        ann_id_img = {i:np.where(img_id_list == i)[0] for i in range(num_img)}
+        ann_id_img = {i:np.where(img_id_list == i)[0] for i in all_img_id}
         return ann_id_img
 
     def get_text(self, ocr_result):
@@ -176,7 +176,7 @@ class GraphCOCODataset(InMemoryDataset):
         if len(gt_filter) == 1:
             label = list(gt_filter.keys())[0]
         elif len(gt_filter) == 0:
-            label = 'Other'
+            label = 'other'
         elif len(gt_filter) > 1:
             if 'Table' in gt_filter.keys() and 'Item' in gt_filter.keys():
                 label = 'Item'
@@ -225,7 +225,7 @@ class GraphCOCODataset(InMemoryDataset):
 
 
 if __name__ == "__main__":
-    dataset = GraphCOCODataset('findoc-dataset')
+    graph = GraphCOCODataset('findoc-dataset', ann_file_rpath='results/train.json')
 
 
 
