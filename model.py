@@ -1,22 +1,23 @@
 import torch
 from torch.nn import Sequential as Seq
-from torch.nn import Linear, ReLU, Sigmoid, Conv2d, Conv1d, Tanh
+from torch.nn import Linear, ReLU, Sigmoid, Conv2d, Conv1d, Tanh, Dropout
 import torch.nn.functional as F
-
 from torch_geometric.utils import to_dense_adj, dense_to_sparse
 from torch_geometric.nn import GCNConv, BatchNorm
+from torch_geometric.data import DataLoader
+
+from transformers import BertModel, AutoTokenizer
+from train_utils import try_gpu
 
 class GraphOperators(torch.nn.Module):
     def __init__(self, power = 2, num_edge_attr = 33, hidden_nodes = 16):
         super(GraphOperators, self).__init__()
         self.power = power
-        # self.edge_attr_mlp = Seq(Linear(num_edge_attr, hidden_nodes), ReLU(), Linear(hidden_nodes, 1), Tanh())
     
     def forward(self, edge_index, edge_attr):
-        # learned_attr = self.edge_attr_mlp(edge_attr)
         adj = to_dense_adj(edge_index=edge_index).type(torch.float32) # convert sparse to adjacency matrix
         adj = torch.squeeze(adj) # remove dimension with lenth 1
-        adj_0 = torch.eye(adj.shape[0])
+        adj_0 = torch.eye(adj.shape[0], device=try_gpu())
         powers_adj = adj_0
         powers_adj = torch.stack((powers_adj, adj))
         for p in range(2,self.power+1):
@@ -59,9 +60,12 @@ class AdjacencyLearning(torch.nn.Module):
         return edge_weight
 
 class AdjacencyLearningClassifier(torch.nn.Module):
-    def __init__(self, num_features, hidden_nodes = 4):
+    def __init__(self, num_features, hidden_nodes = 4, dropout = False):
         super(AdjacencyLearningClassifier, self).__init__()
-        self.mlp = Seq(Linear(num_features, hidden_nodes), ReLU(), Linear(hidden_nodes, 2))
+        if dropout:
+            self.mlp = Seq(Linear(num_features, hidden_nodes), Dropout(0.2), ReLU(), Linear(hidden_nodes, 2))
+        else:
+            self.mlp = Seq(Linear(num_features, hidden_nodes), ReLU(), Linear(hidden_nodes, 2))
 
     def forward(self, x, edge_index):
         edge_weight = self._learn_adjacencies(x, edge_index)
@@ -114,10 +118,12 @@ class GraphResidualBlock(torch.nn.Module):
 
         return out
 
-
 class ResGraph(torch.nn.Module):
-    def __init__(self, num_in_feature, num_embedding, num_hidden_feature, num_class):
+    def __init__(self, num_in_feature, num_embedding, num_hidden_feature, num_class, dropout = False):
         super(ResGraph, self).__init__()
+        model_name = 'bert-base-multilingual-cased'
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.extractor = BertModel.from_pretrained(model_name, return_dict=True).to(device=try_gpu())
         self.num_in_feature = num_in_feature
         self.num_hidden_feature = num_hidden_feature
         self.num_class = num_class
@@ -128,15 +134,31 @@ class ResGraph(torch.nn.Module):
         self.grb_0 = GraphResidualBlock(self.num_embedding, self.num_hidden_feature)
         self.grb_1 = GraphResidualBlock(self.num_embedding, self.num_hidden_feature)
         self.grb_2 = GraphResidualBlock(self.num_embedding, self.num_hidden_feature)
-        self.adj_classifier = AdjacencyLearningClassifier(self.num_embedding ,self.num_hidden_feature)
-        self.linear = Linear(self.num_embedding, num_class)
+        self.adj_classifier = AdjacencyLearningClassifier(self.num_embedding ,self.num_hidden_feature, dropout = dropout)
+        if dropout:
+            self.linear = Seq(Linear(self.num_embedding, num_class), Dropout(dropout))
+        else:
+            self.linear = Seq(Linear(self.num_embedding, num_class))
 
     def forward(self, data):
         powers_adj = self.graph_operator(data.edge_index, data.edge_attr)
-        embedded = self.embedding(data.x)
+        x = self.get_features_bert(data)
+        embedded = self.embedding(x)
         out = self.grb_0(embedded, powers_adj)
         out = self.grb_1(out, powers_adj)
         out = self.grb_2(out, powers_adj)
         edge_learned_weight = self.adj_classifier(out, data.edge_index)
         out = self.linear(out)
         return out, edge_learned_weight
+
+    def get_features_bert(self, data):
+        with torch.no_grad():
+            self.extractor.eval()
+            all_text = []
+            for t in data.text:
+                all_text += t[0]
+            inputs = self.tokenizer(all_text, return_tensors="pt", padding='max_length', truncation=True, max_length=128).to(device=try_gpu())
+            outputs = self.extractor(**inputs)
+            text_feature = outputs.last_hidden_state.mean(axis = 1)
+            feature = torch.cat((data.x, text_feature), axis = 1)
+            return feature

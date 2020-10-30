@@ -12,9 +12,9 @@ class GraphOCR:
     def __init__(self, label, edge_limit = (5,5)):
         self.label = label
         self.count = 0
-        model_name = 'bert-base-multilingual-cased'
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = BertModel.from_pretrained(model_name, return_dict=True)
+        # model_name = 'bert-base-multilingual-cased'
+        # self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        # self.model = BertModel.from_pretrained(model_name, return_dict=True)
         self.edge_limit = edge_limit # edge limit in vertical and horizontal respectively (tuples)
     
     def connect(self, df, h, w, gt_dict, gt=True):
@@ -35,15 +35,16 @@ class GraphOCR:
         self.w = w
         
         x = self.get_pos_feature()
-        text_feature = self.get_text_features_bert()
+        # text_feature = self.get_text_features_bert()
+        text = self.get_text()
         edge_index, edge_attr = self.get_edge_index()
         self.df.sort_index(inplace = True)
         if gt:
             y = np.array([self.label.index(l) for l in self.df['label']])
             edge_label = self.get_edge_label(edge_index)
-            return x, text_feature, y, edge_index, edge_attr, edge_label
+            return x, text, y, edge_index, edge_attr, edge_label
         else:
-            return x, text_feature, edge_index, edge_attr
+            return x, text, edge_index, edge_attr
 
     def get_edge_label(self, edge_index):
         def isinregion(x0, y0, region):
@@ -238,13 +239,17 @@ class GraphOCR:
         self.df['ymax_norm'] = self.df['ymax']/self.h
         pos_feature = np.array(self.df.loc[:,['xmin_norm', 'ymin_norm', 'xmax_norm', 'ymax_norm']])
         return pos_feature
-    
-    def get_text_features_bert(self):
+
+    def get_text(self):
         all_texts = list(self.df['text'])
-        inputs = self.tokenizer(all_texts, return_tensors="pt", padding='max_length', truncation=True, max_length=128)
-        outputs = self.model(**inputs)
-        text_feature = outputs.last_hidden_state
-        return text_feature
+        return all_texts
+    
+    # def get_text_features_bert(self):
+    #     all_texts = list(self.df['text'])
+    #     inputs = self.tokenizer(all_texts, return_tensors="pt", padding='max_length', truncation=True, max_length=128)
+    #     outputs = self.model(**inputs)
+    #     text_feature = outputs.last_hidden_state
+    #     return text_feature
 
     def get_edge_attr(self, mode = 'hori'):
         edge_attr = torch.tensor([0]) if mode == 'hori' else torch.tensor([1])

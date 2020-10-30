@@ -94,13 +94,13 @@ class GraphCOCODataset(InMemoryDataset):
             df = pd.DataFrame(row, columns=['xmin', 'ymin', 'xmax', 'ymax', 'text', 'label'])
             self.visualise_node(img, df)
             print('connecting graph')
-            x, text_feature, y, edge_index, edge_attr, edge_label = self.grapher.connect(df, h, w, gt_dict)
+            x, text, y, edge_index, edge_attr, edge_label = self.grapher.connect(df, h, w, gt_dict)
 
             save_plot_name = osp.join(self.plot_dir, osp.split(img_info['file_name'])[-1])
             self.visualise_graph(img, df, edge_index, edge_attr, edge_label, save_plot_name)
 
             data = Data(x=torch.tensor(x, dtype=torch.float),
-                    text_feature = torch.tensor(text_feature, dtype = torch.float),
+                    text = text,
                     y=torch.tensor(y, dtype=torch.long),
                     edge_index=torch.tensor(edge_index, dtype=torch.long).t().contiguous(),
                     edge_label = torch.tensor(edge_label, dtype=torch.long),

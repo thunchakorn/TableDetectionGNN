@@ -1,14 +1,3 @@
-torch==1.6.0+cu101
-torchvision==0.7+cu101
-torch-scatter==latest+${CUDA}
-torch-sparse==latest+${CUDA}
-torch-cluster==latest+${CUDA}
-torch-spline-conv==latest+${CUDA}
-torch-geometric
 transformers
-
-pythainlp
-tensorflow_hub
-kora
 Shapely
-
+pytictoc

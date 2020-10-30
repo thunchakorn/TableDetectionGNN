@@ -1,4 +1,4 @@
-from RVL_parser import RVL_Dataset
+from coco_parser import GraphCOCODataset
 from torch_geometric.data import DataLoader
 import time
 from sklearn.metrics import classification_report, confusion_matrix
@@ -6,43 +6,60 @@ from model import ResGraph
 from loss import WeightedFocalLoss
 import torch
 from train_utils import *
+from pytictoc import TicToc
 
 
-rvl_dataset = RVL_Dataset('./RVL_Dataset', dir = './RVL_Dataset/dataset')
-train_set = rvl_dataset[:362]
-val_set = rvl_dataset[362:362+52]
-test_set = rvl_dataset[362+52:]
-train_loader = DataLoader(train_set, batch_size = 8, shuffle=True, )
-val_loader = DataLoader(val_set, batch_size = 8, shuffle=False, )
-test_loader = DataLoader(test_set, batch_size = 8, shuffle=False, )
+train_set = GraphCOCODataset('findoc-dataset', ann_file_rpath='results/train.json')
+test_set = GraphCOCODataset('findoc-dataset', ann_file_rpath='results/test.json')
 
-model = ResGraph(772, 64, 32, 6)
+train_num = int(len(train_set)*0.9)
+val_set = train_set[train_num:]
+train_set = train_set[:train_num]
+
+train_loader = DataLoader(train_set, batch_size = 2, shuffle=True, )
+val_loader = DataLoader(val_set, batch_size = 2, shuffle=False, )
+test_loader = DataLoader(test_set, batch_size = 2, shuffle=False, )
+
+model = ResGraph(772, 256, 128, train_set.num_classes).to(device=try_gpu())
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=5e-4)
 criterion = WeightedFocalLoss(gamma=2)
 edge_criterion = WeightedFocalLoss(gamma=2)
 
 
 
-nl = None
-for epoch in range(1, 300):
-    print(f'++++++++++++++++++++++++++++++++++++++++++ \n epoch: {epoch}')
-    start = time.time()
-    loss, edge_loss = train(train_loader)
+best_val_loss = None
+best_state = None
+best_epoch = None
+t = TicToc()
 
-    time_use = time.time() - start
+for epoch in range(1, 50):
+    print(f'_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_ \n epoch: {epoch}')
+    t.tic()
+    total_train_loss = train(train_loader)
+    t.toc('training took')
     with torch.no_grad():
-        nl, el = loss_monitor(val_loader)
-        train_acc = test(train_loader)
-    
+        total_val_loss = loss_monitor(val_loader)
+        # train_acc = test(train_loader)
+
+    if best_val_loss is None or total_val_loss < best_val_loss:
+        best_val_loss = total_val_loss
+        best_epoch = epoch
+        best_state = model.state_dict()
+        print('+++++++++++++++++++++++++++++++++++++++TABLE+++++++++++++++++++++++++++++++++')
+        print('train')
         train_table_acc = test_table(train_loader)
-        val_table_acc = test_table(val_loader)
+        print('test')
         test_table_acc = test_table(test_loader)
 
-    print(f'''Epoch: {epoch:03d}, Train Loss: {loss:.4f},
-    Train Edge Loss: {edge_loss:.4f},\n
-    Val Loss: {nl},
-    Val edge Loss: {el},\n
-    Train Acc: {train_acc:.4f},
+    print(f'''Epoch: {epoch:03d} \n,
+    Train total Loss: {total_train_loss:.4f},\n
+    Val Total Loss: {total_val_loss},
     Train Tabel ACC {train_table_acc:4f},\n
     Test table ACC {test_table_acc},
     Time: {time_use}''')
+
+
+print('best epoch is ', best_epoch, 'best val loss = ', best_val_loss)
+model.load_state_dict(best_state)
+save_path = 'best_weight.pth'
+torch.save(model.state_dict(), save_path)
