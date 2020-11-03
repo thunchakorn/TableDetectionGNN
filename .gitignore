@@ -16,6 +16,7 @@ mlruns/
 __MACOSX/
 # C extensions
 *.so
+.vscode
 
 # Distribution / packaging
 .Python
