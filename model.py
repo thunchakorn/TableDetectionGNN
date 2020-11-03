@@ -121,9 +121,7 @@ class GraphResidualBlock(torch.nn.Module):
 class ResGraph(torch.nn.Module):
     def __init__(self, num_in_feature, num_embedding, num_hidden_feature, num_class, dropout = False):
         super(ResGraph, self).__init__()
-        model_name = 'bert-base-multilingual-cased'
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.extractor = BertModel.from_pretrained(model_name, return_dict=True).to(device=try_gpu())
+
         self.num_in_feature = num_in_feature
         self.num_hidden_feature = num_hidden_feature
         self.num_class = num_class
@@ -142,8 +140,7 @@ class ResGraph(torch.nn.Module):
 
     def forward(self, data):
         powers_adj = self.graph_operator(data.edge_index, data.edge_attr)
-        x = self.get_features_bert(data)
-        embedded = self.embedding(x)
+        embedded = self.embedding(data.x)
         out = self.grb_0(embedded, powers_adj)
         out = self.grb_1(out, powers_adj)
         out = self.grb_2(out, powers_adj)
@@ -151,14 +148,14 @@ class ResGraph(torch.nn.Module):
         out = self.linear(out)
         return out, edge_learned_weight
 
-    def get_features_bert(self, data):
-        with torch.no_grad():
-            self.extractor.eval()
-            all_text = []
-            for t in data.text:
-                all_text += t[0]
-            inputs = self.tokenizer(all_text, return_tensors="pt", padding='max_length', truncation=True, max_length=128).to(device=try_gpu())
-            outputs = self.extractor(**inputs)
-            text_feature = outputs.last_hidden_state.mean(axis = 1)
-            feature = torch.cat((data.x, text_feature), axis = 1)
-            return feature
+    # def get_features_bert(self, data):
+    #     with torch.no_grad():
+    #         self.extractor.eval()
+    #         all_text = []
+    #         for t in data.text:
+    #             all_text += t[0]
+    #         inputs = self.tokenizer(all_text, return_tensors="pt", padding='max_length', truncation=True, max_length=128).to(device=try_gpu())
+    #         outputs = self.extractor(**inputs)
+    #         text_feature = outputs.last_hidden_state.mean(axis = 1)
+    #         feature = torch.cat((data.x, text_feature), axis = 1)
+    #         return feature

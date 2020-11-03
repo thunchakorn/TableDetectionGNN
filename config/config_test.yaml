@@ -1,0 +1,11 @@
+Data:
+    root: findoc-dataset
+    ann_file_rpath: results/test.json
+
+Model:
+    num_in_feature: 772
+    num_embedding: 256
+    num_hidden_feature: 128
+
+Weight:
+    path: /output/best_weight.pth

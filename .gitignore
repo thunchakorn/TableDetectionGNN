@@ -4,7 +4,6 @@ findoc-dataset*
 findoc-dataset
 
 # test file
-test.py
 test.ipynb
 findoc-dataset.zip
 
@@ -13,7 +12,8 @@ findoc-dataset.zip
 __pycache__/
 *.py[cod]
 *$py.class
-
+mlruns/
+__MACOSX/
 # C extensions
 *.so
 

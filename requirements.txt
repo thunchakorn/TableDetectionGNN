@@ -1,3 +1,6 @@
 transformers
 Shapely
 pytictoc
+PyYAML==5.3.1
+mlflow==1.9.1
+boto3

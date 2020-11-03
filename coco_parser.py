@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 from shapely.geometry.polygon import Polygon
 from shapely.geometry import Point
-from grapher2 import GraphOCR
+from grapher_nontext import GraphOCR
 
 class GraphCOCODataset(InMemoryDataset):
     '''
@@ -28,15 +28,20 @@ class GraphCOCODataset(InMemoryDataset):
     |       |___dataset2/
 
     '''
-    def __init__(self, root, ann_file_rpath, transform=None, pre_transform=None):
+    def __init__(self, root, ann_file_rpath = None, dataset_name = None,transform=None, pre_transform=None):
         """
         ann_dir: annotation file relative path from root e.g. root = './abc' ann_file_path='./annotation/ann.json'
+                if dataset is already precessed then leave ann_file_rpath=None and only define dataset_name
+        dataset_name: dataset_name for load (if already processed) or save as .pt file in processed folder (for save after processed)
         """
         self.root = root
-        self.ann_file_rpath = ann_file_rpath
-        self.ann_path = osp.join(root, ann_file_rpath)
-        self.dataset_name = osp.splitext(osp.split(self.ann_file_rpath)[-1])[0]
-        print(self.root, self.ann_file_rpath, self.ann_path, self.dataset_name)
+        if ann_file_rpath is not None:
+            self.ann_file_rpath = ann_file_rpath
+            self.ann_path = osp.join(root, ann_file_rpath)
+        if dataset_name is None:
+            self.dataset_name = osp.splitext(osp.split(self.ann_file_rpath)[-1])[0]
+        else:
+            self.dataset_name = dataset_name
 
         self.TARGET = ['docType', 'item', 'payment', 'reciever', 'remark', 'sender', 'signature', 'summary', 'table', 'other']
         self.grapher = GraphOCR(label = self.TARGET, edge_limit=(2,2))
@@ -52,9 +57,9 @@ class GraphCOCODataset(InMemoryDataset):
 
     @property
     def processed_file_names(self):
-        # if osp.exists(osp.join(self.root, 'processed', self.dataset_name + '.pt')):
-        #     return [self.dataset_name + '.pt']
-        # else:
+        if osp.exists(osp.join(self.root, 'processed', self.dataset_name + '.pt')):
+            return [self.dataset_name + '.pt']
+        else:
             return []
     
     def download(self):
@@ -83,7 +88,7 @@ class GraphCOCODataset(InMemoryDataset):
             ## ocr level
             ocr_path = img_info['file_name'].replace('images', 'OCR').replace('.jpg', '.json')
 
-            with open(ocr_path, 'r') as f:
+            with open(ocr_path, 'r', encoding='utf-8') as f:
                 ocr = json.load(f)
 
             row = []
@@ -94,13 +99,12 @@ class GraphCOCODataset(InMemoryDataset):
             df = pd.DataFrame(row, columns=['xmin', 'ymin', 'xmax', 'ymax', 'text', 'label'])
             self.visualise_node(img, df)
             print('connecting graph')
-            x, text, y, edge_index, edge_attr, edge_label = self.grapher.connect(df, h, w, gt_dict)
+            x, y, edge_index, edge_attr, edge_label = self.grapher.connect(df, h, w, gt_dict)
 
             save_plot_name = osp.join(self.plot_dir, osp.split(img_info['file_name'])[-1])
             self.visualise_graph(img, df, edge_index, edge_attr, edge_label, save_plot_name)
 
             data = Data(x=torch.tensor(x, dtype=torch.float),
-                    text = text,
                     y=torch.tensor(y, dtype=torch.long),
                     edge_index=torch.tensor(edge_index, dtype=torch.long).t().contiguous(),
                     edge_label = torch.tensor(edge_label, dtype=torch.long),
@@ -216,6 +220,7 @@ class GraphCOCODataset(InMemoryDataset):
                     cv2.circle(img, (int(df.loc[dst, 'xcen']), int(df.loc[dst, 'ycen'])), 2, (255,0,0), 2)
                 else:
                     cv2.circle(img, (int(df.loc[dst, 'xcen']), int(df.loc[dst, 'ycen'])), 2, (0,255,255), 2)
+            print(save_name)
             cv2.imwrite(save_name, img)
 
     def visualise_node(self, img, df):
@@ -223,9 +228,8 @@ class GraphCOCODataset(InMemoryDataset):
             cv2.rectangle(img, (row['xmin'], row['ymin']), (row['xmax'], row['ymax']), (255,0,0), 1)
             cv2.putText(img, row['label'], (row['xmin'], row['ymin']), cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0,0,255), 1, cv2.LINE_AA)
 
-
 if __name__ == "__main__":
-    graph = GraphCOCODataset('findoc-dataset', ann_file_rpath='results/train.json')
+    graph = GraphCOCODataset('findoc-dataset', ann_file_rpath='results/test.json', dataset_name = 'test_nontext_craft')
 
 
 
